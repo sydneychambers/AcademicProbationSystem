@@ -1,13 +1,14 @@
 import traceback
 import mysql.connector
 from PyQt5.QtGui import QFont
-from PyQt5.QtWidgets import QMessageBox
+from PyQt5.QtWidgets import QMessageBox, QComboBox
 from PyQt5.QtGui import QTextDocument, QTextCursor, QFontDatabase
 from PyQt5.QtPrintSupport import QPrinter
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, \
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QSizePolicy
 from PyQt5.QtCore import Qt
 from fpdf import FPDF
+
 
 def calculate_semester_gpa(student_id, semester):
     conn = mysql.connector.connect(
@@ -79,6 +80,40 @@ def calculate_cumulative_gpa(semester1_gpa, semester2_gpa):
         return {'total_grade_points': total_grade_points, 'total_credits': total_credits,
                 'cumulative_gpa': float(cumulative_gpa)}  # Convert cumulative_gpa to float
 
+
+def fetch_academic_years():
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="password",
+            database="ProbationSystem"
+        )
+
+        # Create a cursor object to execute SQL queries
+        cursor = conn.cursor()
+
+        # Execute the SQL query to retrieve distinct academic years
+        cursor.execute("SELECT DISTINCT academicYear FROM moduleDetails")
+
+        # Fetch all the rows from the result set
+        academic_years = [year[0] for year in cursor.fetchall()]  # Extract the first element of each tuple
+
+        # Process the academic_years variable as needed
+        for year in academic_years:
+            print(year)  # Print each academic year
+
+        return academic_years
+
+    except mysql.connector.Error as err:
+        print("Error accessing database:", err)
+        return None
+
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def fetch_module_details(student_id, year):
     conn = mysql.connector.connect(
         host='localhost',
@@ -103,7 +138,7 @@ def fetch_module_details(student_id, year):
             INNER JOIN
                 moduleMaster mm ON md.moduleCode = mm.moduleCode
             WHERE 
-                md.studentID = %s AND md.moduleYear = %s AND md.semester = '1'
+                md.studentID = %s AND md.academicYear = %s AND md.semester = '1'
         """
         cursor.execute(query_sem1, (student_id, year))
         module_details_sem1 = cursor.fetchall()
@@ -122,7 +157,7 @@ def fetch_module_details(student_id, year):
             INNER JOIN
                 moduleMaster mm ON md.moduleCode = mm.moduleCode
             WHERE 
-                md.studentID = %s AND md.moduleYear = %s AND md.semester = '2'
+                md.studentID = %s AND md.academicYear = %s AND md.semester = '2'
         """
         cursor.execute(query_sem2, (student_id, year))
         module_details_sem2 = cursor.fetchall()
@@ -139,46 +174,70 @@ def fetch_module_details(student_id, year):
         conn.close()
 
 
-def generate_pdf(student_id, year):
+def generate_pdf(student_id, student_name, cumulative_gpa, year):
     try:
         # Call fetch_module_details to get module details for the student
         module_details_sem1, module_details_sem2 = fetch_module_details(student_id, year)
 
         # Create PDF object
-        pdf = FPDF()
+        pdf = FPDF('P', 'mm', 'Legal')
         pdf.set_auto_page_break(auto=True, margin=15)
-
-        # Add a page
         pdf.add_page()
 
-        # Set font for the report title
-        pdf.set_font("Arial", size=16)
+        # Calculate the x-coordinate to center the image horizontally
+        page_width = pdf.w
+        image_width = 60  # Set the width of the image
+        x_coordinate = (page_width - image_width) / 2
+
+        # Add document header
+        pdf.set_font("Times", size=12)
+        pdf.image("assets/images/unnamed.png", x=x_coordinate, y=10, w=image_width)  # Center the image horizontally
+        pdf.ln(35)  # Move down to leave space for the image
+
+        pdf.cell(0, 10, txt="UNIVERSITY OF TECHNOLOGY", ln=True, align="C")  # Add university name
+        pdf.cell(0, 10, txt="Department of Student Records", ln=True, align="C")  # Add department name
 
         # Add report title
-        pdf.cell(200, 10, txt=f"Student Report", ln=True, align="C")
+        pdf.set_font("Times", style="B", size=12)
+        pdf.cell(200, 10, txt=f"STUDENT REPORT", ln=True, align="C")
 
+        # Add separator
+        pdf.set_font("Times", size=12)
+        pdf.cell(200, 10, txt=f"------------------------------------------------------------------"
+                              f"------------------------------------------------------------------", ln=True, align="C")
+
+        # Add student information
+        pdf.set_font("Times", size=12)
+        pdf.cell(200, 10, txt=f"        STUDENT ID#: {student_id}", ln=True, align="L")
+        pdf.cell(200, 10, txt=f"        STUDENT NAME: {student_name}", ln=True, align="L")
+        pdf.cell(200, 10, txt=f"        ACADEMIC YEAR: {year}", ln=True, align="L")
+        pdf.cell(200, 10, txt=f"        CUMULATIVE GPA: {cumulative_gpa}", ln=True, align="L")
+
+        # Add separator
+        pdf.set_font("Times", size=12)
+        pdf.cell(200, 10, txt=f"------------------------------------------------------------------"
+                              f"------------------------------------------------------------------", ln=True, align="C")
+
+        # Generate tables for semester data
         if module_details_sem1:
-            # Add a break or new line before semester 1 table
-            pdf.ln(10)
-            # Add semester 1 title
+            pdf.ln(10)  # Add some space before semester 1 table
             pdf.cell(200, 10, txt="Semester 1", ln=True, align="C")
-            # Generate table for semester 1
             generate_table(pdf, module_details_sem1)
 
         if module_details_sem2:
-            # Add a break or new line before semester 2 table
-            pdf.ln(10)
-            # Add semester 2 title
+            pdf.ln(10)  # Add some space before semester 2 table
             pdf.cell(200, 10, txt="Semester 2", ln=True, align="C")
-            # Generate table for semester 2
             generate_table(pdf, module_details_sem2)
 
         # Save the PDF to a file
-        pdf_output = f"{student_id}_report.pdf"
+        academic_year_for_filename = year.replace('/', '')
+        pdf_output = f"reports/{student_id}_report_{academic_year_for_filename}.pdf"
+
         pdf.output(pdf_output)
 
         QMessageBox.information(None, "Report Generated",
-                                f"Student report has been generated as '{pdf_output}'.")
+                                f"Student report has been generated as "
+                                f"'{student_id}_report_{academic_year_for_filename}.pdf'.")
 
     except Exception as e:
         traceback.print_exc()  # Print traceback for debugging
@@ -187,63 +246,79 @@ def generate_pdf(student_id, year):
 
 def generate_table(pdf, module_details):
     # Set font for the table
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Times", size=12)
+
+    # Calculate the width of each cell based on the number of modules
+    num_modules = len(module_details)
+    cell_width = 180 / (num_modules + 2)  # Total width minus space for Module and Total columns
+
+    # Calculate the x-coordinate for centering the table horizontally on the page
+    x_offset = (pdf.w - 180) / 2
+
+    # Set x-coordinate to center the table
+    pdf.set_x(x_offset)
 
     # Add headers
-    pdf.cell(30, 10, "Module", 1)
+    pdf.cell(cell_width, 10, "Module", 1)
     for module in module_details:
         module_code = module[0]
-        pdf.cell(30, 10, module_code, 1)
-    pdf.cell(30, 10, "Total", 1)
+        pdf.cell(cell_width, 10, module_code, 1)
+    pdf.cell(cell_width, 10, "Total", 1)
     pdf.ln()
 
-    # Add credits row
-    pdf.cell(30, 10, "Credits", 1)
+    # Add module_credits row
+    pdf.set_x(x_offset)
+    pdf.cell(cell_width, 10, "Credits", 1)
     for module in module_details:
-        credits = module[2]
-        pdf.cell(30, 10, str(credits), 1)
+        module_credits = module[2]
+        pdf.cell(cell_width, 10, str(module_credits), 1)
     total_credits = sum(module[2] for module in module_details)
-    pdf.cell(30, 10, str(total_credits), 1)
+    pdf.cell(cell_width, 10, str(total_credits), 1)
     pdf.ln()
 
     # Add grade row
-    pdf.cell(30, 10, "Grade", 1)
+    pdf.set_x(x_offset)
+    pdf.cell(cell_width, 10, "Grade", 1)
     for module in module_details:
         grade = module[3]
-        pdf.cell(30, 10, grade, 1)
-    pdf.cell(30, 10, "", 1)  # Empty cell for Total
+        pdf.cell(cell_width, 10, grade, 1)
+    pdf.cell(cell_width, 10, "", 1)  # Empty cell for Total
     pdf.ln()
 
     # Add grade points row
-    pdf.cell(30, 10, "Grade Points", 1)
+    pdf.set_x(x_offset)
+    pdf.cell(cell_width, 10, "Grade Points", 1)
     for module in module_details:
         grade_points = module[4]
-        pdf.cell(30, 10, str(grade_points), 1)
-    pdf.cell(30, 10, "", 1)  # Empty cell for Total
+        pdf.cell(cell_width, 10, str(grade_points), 1)
+    pdf.cell(cell_width, 10, "", 1)  # Empty cell for Total
     pdf.ln()
 
     # Add grade points earned row
-    pdf.cell(30, 10, "Points Earned", 1)
+    pdf.set_x(x_offset)
+    pdf.cell(cell_width, 10, "Points Earned", 1)
     for module in module_details:
-        credits = module[2]
+        module_credits = module[2]
         grade_points = module[4]
-        grade_points_earned = round(credits * float(grade_points), 2)
-        pdf.cell(30, 10, str(grade_points_earned), 1)
-    total_grade_points_earned = sum(module[2] * float(module[4]) for module in module_details)
-    pdf.cell(30, 10, str(total_grade_points_earned), 1)
+        grade_points_earned = module_credits * float(grade_points)
+        pdf.cell(cell_width, 10, str(grade_points_earned), 1)
+    total_grade_points_earned = round(sum(module[2] * float(module[4]) for module in module_details), 2)
+    pdf.cell(cell_width, 10, str(total_grade_points_earned), 1)
     pdf.ln()
 
     # Calculate GPA
     if total_credits == 0:
         gpa = 0
     else:
-        gpa = total_grade_points_earned / total_credits
+        gpa = round((total_grade_points_earned / total_credits), 2)
 
     # Add GPA row
-    pdf.cell(30, 10, "GPA", 1)
-    pdf.cell(30 * len(module_details), 10, "", 1)  # Empty cells for modules
-    pdf.cell(30, 10, f"{gpa:.2f}", 1)
+    pdf.set_x(x_offset)  # Reset x-coordinate
+    pdf.cell(cell_width, 10, "GPA", 1)
+    pdf.cell(cell_width * num_modules, 10, f"{total_grade_points_earned} / {total_credits}", 1)
+    pdf.cell(cell_width, 10, f"{gpa:.2f}", 1)  # Add text for GPA
     pdf.ln()
+
 
 def process_student_records(year, desired_gpa):
     conn = mysql.connector.connect(
@@ -273,7 +348,7 @@ def process_student_records(year, desired_gpa):
             INNER JOIN
                 moduleMaster mm ON md.moduleCode = mm.moduleCode
             WHERE 
-                md.moduleYear = %s
+                md.academicYear = %s
             GROUP BY 
                 md.studentID, sm.studentFirstName, sm.studentSurname, md.semester, mm.numOfCredits
         """
@@ -309,7 +384,9 @@ def process_student_records(year, desired_gpa):
                     print("\n")
 
                     # Check semester 2 data for the student
-                    cursor.execute("SELECT moduleCode, grade FROM moduleDetails WHERE studentID = %s AND semester = '2'", (student_id,))
+                    cursor.execute(
+                        "SELECT moduleCode, grade FROM moduleDetails WHERE studentID = %s AND semester = '2'",
+                        (student_id,))
                     semester2_data = cursor.fetchall()
                     print(semester2_data)
 
@@ -330,6 +407,7 @@ def process_student_records(year, desired_gpa):
 
     finally:
         conn.close()
+
 
 # Handling the GUI
 class MainWindow(QMainWindow):
@@ -352,31 +430,34 @@ class MainWindow(QMainWindow):
 
         # Add labels and text boxes for search criteria
         label_desired_gpa = QLabel("Please enter desired GPA:")
+        label_desired_gpa.setFixedHeight(30)
         self.textbox_desired_gpa = QLineEdit("2.2")  # Default value
-        label_desired_year = QLabel("Please enter desired year:")
-        self.textbox_desired_year = QLineEdit("2020")
+        self.textbox_desired_gpa.setFixedHeight(30)  # Set the height
+        label_desired_year = QLabel("Please select desired academic year:")
+        label_desired_year.setFixedHeight(30)
+        self.dropdown_academic_year = QComboBox()
+        self.dropdown_academic_year.addItem("---")  # Default option
+        academic_years = fetch_academic_years()
+        for year in academic_years:
+            self.dropdown_academic_year.addItem(year)
+        self.dropdown_academic_year.setFixedHeight(30)  # Set the height
 
         # Add search button
         self.search_button = QPushButton("Search")
         self.search_button.clicked.connect(self.search_records)
-
-        # Increase size of size button
         self.search_button.setFixedHeight(30)
 
         # Add generate report button
         self.generate_report_button = QPushButton("Generate Report")
         self.generate_report_button.setEnabled(False)  # Initially disabled
         self.generate_report_button.clicked.connect(self.generate_report)
-
-        # Increase size of generate report button
         self.generate_report_button.setFixedHeight(30)
-        self.generate_report_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # Add labels and text boxes to top layout
         top_layout.addWidget(label_desired_gpa)
         top_layout.addWidget(self.textbox_desired_gpa)
         top_layout.addWidget(label_desired_year)
-        top_layout.addWidget(self.textbox_desired_year)
+        top_layout.addWidget(self.dropdown_academic_year)
         top_layout.addWidget(self.search_button)
 
         # Add generate report button to top layout
@@ -409,7 +490,7 @@ class MainWindow(QMainWindow):
 
     def search_records(self):
         desired_gpa = float(self.textbox_desired_gpa.text())
-        desired_year = self.textbox_desired_year.text()
+        desired_year = self.dropdown_academic_year.currentText()
 
         try:
             # Call process_student_records to fetch records
@@ -451,8 +532,10 @@ class MainWindow(QMainWindow):
             selected_row = self.table_widget.currentRow()  # Get the index of the selected row
             if selected_row != -1:  # Check if a row is selected
                 student_id = self.table_widget.item(selected_row, 0).text()
-            year = self.textbox_desired_year.text()
-            generate_pdf(student_id, year)
+            year = self.dropdown_academic_year.currentText()
+            cumulative_gpa = self.table_widget.item(selected_row, 4).text()
+            student_name = self.table_widget.item(selected_row, 1).text()
+            generate_pdf(student_id, student_name, cumulative_gpa, year)
         except Exception as e:
             traceback.print_exc()  # Print traceback for debugging
             QMessageBox.critical(None, "Error", f"An error occurred: {str(e)}")
@@ -462,6 +545,7 @@ class MainWindow(QMainWindow):
         # Enable generate report button if a row is selected, disable otherwise
         selected_rows = self.table_widget.selectionModel().selectedRows()
         self.generate_report_button.setEnabled(len(selected_rows) > 0)
+
 
 if __name__ == "__main__":
     app = QApplication([])
