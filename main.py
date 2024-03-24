@@ -1,11 +1,8 @@
 import traceback
 import mysql.connector
-from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QMessageBox, QComboBox
-from PyQt5.QtGui import QTextDocument, QTextCursor, QFontDatabase
-from PyQt5.QtPrintSupport import QPrinter
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, \
-    QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QSizePolicy
+    QPushButton, QTableWidget, QTableWidgetItem, QHeaderView
 from PyQt5.QtCore import Qt
 from fpdf import FPDF
 
