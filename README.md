@@ -20,6 +20,3 @@ To run the Academic Probation System locally, follow these steps:
 2. **Install Dependencies**: Navigate to the project directory and run `pip install -r requirements.txt` to install Python dependencies.
 3. **Database Setup**: Set up a MySQL database and configure the connection details in the project's configuration files.
 4. **Run the Application**: Using your desired Python IDE, run 'main.py'
-
-## **Contact**
-For questions or feedback regarding the Academic Probation System, please contact [Sydney Chambers](mailto:chamberssydney09@gmail.com).
